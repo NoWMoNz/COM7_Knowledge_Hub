@@ -9,7 +9,8 @@ import { embedQuery } from "@/services/ai/embedding.service";
 import { generateText } from "@/services/ai/gemini.service";
 import { searchChunks } from "@/services/ai/vector-search.service";
 import { answerQuestion, type RagResult } from "@/services/ai/rag.service";
-import { detectLanguage, UNAVAILABLE } from "@/services/ai/language";
+import { detectLanguage, UNAVAILABLE, type Lang } from "@/services/ai/language";
+import { gateNoAnswer } from "@/services/ai/stream-gate";
 
 export const maxDuration = 60;
 
@@ -61,18 +62,78 @@ export async function POST(request: Request) {
 
   const lang = detectLanguage(message);
   const cfg = getAiConfig();
+  const sid: string = sessionId!; // set by one of the branches above (s.id is untyped, so TS cannot narrow it)
+
+  // The answer streams back as NDJSON, one event per line:
+  //   {type:"session"} first, {type:"delta"} pieces of the model's raw text as it writes,
+  //   then {type:"done"} with the validated answer + sources, which replaces the streamed text
+  //   (citations are only checked once the whole answer exists).
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let open = true;
+      const send = (event: ChatStreamEvent) => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+        } catch {
+          open = false; // client went away: keep working so the conversation is still saved
+        }
+      };
+      send({ type: "session", sessionId: sid });
+      try {
+        send({ type: "done", ...(await answerAndSave(sid, message, lang, cfg, supabase, admin, user.id, (text) => send({ type: "delta", text }))) });
+      } catch (e) {
+        console.error("[chat] failed", String(e));
+        send({ type: "error", message: "Something went wrong. Please try again." });
+      }
+      if (open) controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      "x-accel-buffering": "no", // stop reverse proxies from buffering the stream
+    },
+  });
+}
+
+export type ChatDone = {
+  sessionId: string;
+  answer: string;
+  answered: boolean;
+  sources: { index: number; documentId: string; title: string; version: number; page: number | null; section: string | null; fileExt: string }[];
+};
+export type ChatStreamEvent =
+  | { type: "session"; sessionId: string }
+  | { type: "delta"; text: string }
+  | ({ type: "done" } & ChatDone)
+  | { type: "error"; message: string };
+
+async function answerAndSave(
+  sessionId: string,
+  message: string,
+  lang: Lang,
+  cfg: ReturnType<typeof getAiConfig>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  onDelta: (text: string) => void,
+): Promise<ChatDone> {
   // Saving the question runs while the AI works; it is awaited before the answer is stored, so the order is kept.
   const savedQuestion = (async () => admin.from("chat_messages").insert({ session_id: sessionId, role: "user", content: message, language: lang }))();
 
+  const streamDelta = gateNoAnswer(onDelta);
   const result: RagResult = cfg.apiKey
     ? await answerQuestion(message, lang, { topK: cfg.RAG_TOP_K, minSimilarity: cfg.RAG_MIN_SIMILARITY }, {
         embedQuery,
         search: (emb, k, min) => searchChunks(supabase, emb, k, min),
-        generate: generateText,
+        generate: (system, prompt) => generateText(system, prompt, streamDelta),
       })
     : { answered: false, text: UNAVAILABLE[lang], reason: "ai_unavailable", topSimilarity: null }; // no key: no external calls
   await savedQuestion;
-
   // Independent writes run together; only the sources have to wait for the assistant message id.
   await Promise.all([
     (async () => {
@@ -101,13 +162,13 @@ export async function POST(request: Request) {
     result.answered
       ? null
       : admin.from("unanswered_questions").insert({
-          user_id: user.id, session_id: sessionId, question: message, language: lang,
+          user_id: userId, session_id: sessionId, question: message, language: lang,
           reason: result.reason, top_similarity: result.topSimilarity,
         }),
     admin.from("chat_sessions").update({ updated_at: new Date().toISOString() }).eq("id", sessionId),
   ]);
 
-  return NextResponse.json({
+  return {
     sessionId,
     answer: result.text,
     answered: result.answered,
@@ -117,5 +178,5 @@ export async function POST(request: Request) {
           page: chunk.page_number, section: chunk.section, fileExt: chunk.file_ext,
         }))
       : [],
-  });
+  };
 }

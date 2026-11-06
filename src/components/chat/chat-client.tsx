@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Search, Send, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MAX_QUESTION_CHARS } from "@/constants/ai";
+import type { ChatStreamEvent } from "@/app/api/chat/route";
 
 export type ChatSource = {
   index: number;
@@ -60,9 +61,11 @@ export function ChatClient({ sessionId, initialMessages }: { sessionId: string |
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The answer while it is still being written; replaced by the validated answer when the stream ends.
+  const [draft, setDraft] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: draft ? "auto" : "smooth" }); }, [messages, busy, draft]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -78,15 +81,45 @@ export function ChatClient({ sessionId, initialMessages }: { sessionId: string |
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sessionId: sid ?? undefined, message }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message ?? "Request failed.");
-      setMessages((m) => [...m, { id: `a-${crypto.randomUUID()}`, role: "assistant", content: data.answer, answered: data.answered, sources: data.sources }]);
-      if (!sid) {
-        setSid(data.sessionId);
-        window.history.replaceState(null, "", `/chat/${data.sessionId}`);
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error?.message ?? "Request failed.");
       }
+
+      let finished = false;
+      const handle = (event: ChatStreamEvent) => {
+        if (event.type === "session") {
+          if (!sid) {
+            setSid(event.sessionId);
+            window.history.replaceState(null, "", `/chat/${event.sessionId}`);
+          }
+        } else if (event.type === "delta") {
+          setDraft((d) => (d ?? "") + event.text);
+        } else if (event.type === "done") {
+          finished = true;
+          setDraft(null);
+          setMessages((m) => [...m, { id: `a-${crypto.randomUUID()}`, role: "assistant", content: event.answer, answered: event.answered, sources: event.sources }]);
+        } else {
+          throw new Error(event.message);
+        }
+      };
+
+      // NDJSON: one event per line; a read can end mid-line, so keep the remainder for the next read.
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += value;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) if (line.trim()) handle(JSON.parse(line) as ChatStreamEvent);
+      }
+      if (buffer.trim()) handle(JSON.parse(buffer) as ChatStreamEvent);
+      if (!finished) throw new Error("การเชื่อมต่อขาดหาย / The connection was interrupted.");
       router.refresh(); // refresh the conversation list
     } catch (err) {
+      setDraft(null);
       setError((err as Error).message || "เกิดข้อผิดพลาด / Something went wrong.");
     } finally {
       setBusy(false);
@@ -125,7 +158,20 @@ export function ChatClient({ sessionId, initialMessages }: { sessionId: string |
             </div>
           </div>
         ))}
-        {busy && (
+        {draft !== null && (
+          <div className="flex items-start gap-3">
+            <span aria-hidden className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-ink text-brand-400 ring-1 ring-white/10">
+              <Sparkles className="size-4 animate-pulse" />
+            </span>
+            <div className="min-w-0 max-w-[85%] rounded-2xl rounded-tl-md border border-slate-200/80 bg-white px-4 py-3 text-sm text-slate-900 shadow-card">
+              <p className="whitespace-pre-wrap break-words leading-relaxed">
+                {draft}
+                <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-brand-500" />
+              </p>
+            </div>
+          </div>
+        )}
+        {busy && draft === null && (
           <div className="flex items-center gap-3" role="status">
             <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-ink text-brand-400"><Search className="size-4 animate-pulse" /></span>
             <span className="inline-flex items-center gap-2 rounded-2xl rounded-tl-md border border-slate-200/80 bg-white px-4 py-2.5 text-sm text-slate-600 shadow-card">

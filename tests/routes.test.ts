@@ -202,6 +202,13 @@ describe("POST /api/chat", () => {
   });
   const chunk = { chunk_id: "c1", document_id: "d1", version_id: "v1", content: "Sick leave: 30 days.", page_number: 4, section: null, similarity: 0.9, document_title: "Handbook", version_number: 2, file_ext: "pdf" };
   const assistantInsert = () => (h.adminDb as ReturnType<typeof fakeSupabase>).ops("chat_messages", "insert").map((c) => c.args[0] as Record<string, unknown>).find((r) => r.role === "assistant");
+  /** Reads the whole NDJSON stream; `body` is the final "done" event (what the old JSON response held). */
+  async function readChat(res: Response) {
+    const events = (await res.text()).split("\n").filter(Boolean).map((l) => JSON.parse(l) as { type: string; [k: string]: unknown });
+    const done = events.find((e) => e.type === "done") as unknown as Record<string, unknown> & { answer: string; answered: boolean };
+    return { events, body: done, streamed: events.filter((e) => e.type === "delta").map((e) => e.text).join("") };
+  }
+  const chat = async (body: unknown) => readChat(await chatPOST(chatReq(body)));
 
   it("401 signed out; 400 for empty / oversized / malformed bodies", async () => {
     expect((await chatPOST(chatReq({ message: "hi" }))).status).toBe(401);
@@ -228,6 +235,8 @@ describe("POST /api/chat", () => {
     h.generateText.mockResolvedValue({ text: "Sick leave is 30 days [1].", blocked: false });
     const res = await chatPOST(chatReq({ message: "How many sick days?", sessionId: "33333333-3333-4333-8333-333333333333" }));
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+    await readChat(res); // the work finishes inside the stream
     const admin = h.adminDb as ReturnType<typeof fakeSupabase>;
     const roles = admin.log.filter((l) => l.table === "chat_messages" && l.calls.some((c) => c.method === "insert"))
       .map((l) => (l.calls.find((c) => c.method === "insert")!.args[0] as { role: string }).role);
@@ -245,8 +254,8 @@ describe("POST /api/chat", () => {
   it("no evidence: fixed fallback, model never called, question logged as unanswered", async () => {
     h.user = employee;
     h.userDb = sessionDb();
-    const res = await chatPOST(chatReq({ message: "นโยบายลาคลอดคืออะไร" }));
-    const body = await res.json();
+    const { body, events } = await chat({ message: "นโยบายลาคลอดคืออะไร" });
+    expect(events[0]).toEqual({ type: "session", sessionId: "s-new" });
     expect(body).toMatchObject({ sessionId: "s-new", answered: false, sources: [] });
     expect(body.answer).toContain("ฝ่ายบุคคล");
     expect(h.generateText).not.toHaveBeenCalled();
@@ -259,7 +268,7 @@ describe("POST /api/chat", () => {
     h.userDb = sessionDb();
     h.searchChunks.mockResolvedValue([chunk]);
     h.generateText.mockResolvedValue({ text: "Sick leave is 30 days [1].", blocked: false });
-    const body = await (await chatPOST(chatReq({ message: "How many sick days?" }))).json();
+    const { body } = await chat({ message: "How many sick days?" });
     expect(body).toMatchObject({ answered: true, sources: [{ index: 1, documentId: "d1", title: "Handbook", version: 2, page: 4, fileExt: "pdf" }] });
     expect(assistantInsert()).toMatchObject({ answered: true, language: "en" });
     const src = (h.adminDb as ReturnType<typeof fakeSupabase>).ops("message_sources", "insert")[0].args[0] as Record<string, unknown>[];
@@ -271,7 +280,7 @@ describe("POST /api/chat", () => {
     h.user = employee;
     const userDb = sessionDb();
     h.userDb = userDb;
-    await chatPOST(chatReq({ message: "hi there" }));
+    await chat({ message: "hi there" });
     expect(h.searchChunks.mock.calls[0][0]).toBe(userDb.client);
   });
 
@@ -280,7 +289,7 @@ describe("POST /api/chat", () => {
     h.userDb = sessionDb();
     h.searchChunks.mockResolvedValue([chunk]);
     h.generateText.mockResolvedValue({ text: "Probably 30 days.", blocked: false });
-    const body = await (await chatPOST(chatReq({ message: "How many sick days?" }))).json();
+    const { body } = await chat({ message: "How many sick days?" });
     expect(body).toMatchObject({ answered: false, sources: [] });
     expect(body.answer).not.toContain("30 days");
   });
@@ -289,10 +298,37 @@ describe("POST /api/chat", () => {
     delete process.env.GEMINI_API_KEY;
     h.user = employee;
     h.userDb = sessionDb();
-    const body = await (await chatPOST(chatReq({ message: "hello" }))).json();
+    const { body } = await chat({ message: "hello" });
     expect(body.answered).toBe(false);
     expect(body.answer).toMatch(/not available|temporarily unavailable/i);
     expect(h.embedQuery).not.toHaveBeenCalled();
+  });
+
+  const streamingModel = (pieces: string[]) =>
+    h.generateText.mockImplementation(async (_s: string, _u: string, onDelta?: (t: string) => void) => {
+      pieces.forEach((p) => onDelta?.(p));
+      return { text: pieces.join(""), blocked: false };
+    });
+
+  it("streams the answer as it is written, then ends with the validated answer + sources", async () => {
+    h.user = employee;
+    h.userDb = sessionDb();
+    h.searchChunks.mockResolvedValue([chunk]);
+    streamingModel(["Sick leave ", "is 30 days ", "[1][9]."]);
+    const { events, body, streamed } = await chat({ message: "How many sick days?" });
+    expect(events.map((e) => e.type)).toEqual(["session", "delta", "delta", "delta", "done"]);
+    expect(streamed).toBe("Sick leave is 30 days [1][9].");
+    expect(body).toMatchObject({ answered: true, answer: "Sick leave is 30 days [1]." }); // fake [9] removed in the final text
+  });
+
+  it("a NO_ANSWER reply is never streamed to the user", async () => {
+    h.user = employee;
+    h.userDb = sessionDb();
+    h.searchChunks.mockResolvedValue([chunk]);
+    streamingModel(["NO_", "ANS", "WER"]);
+    const { events, body } = await chat({ message: "How many sick days?" });
+    expect(events.filter((e) => e.type === "delta")).toHaveLength(0);
+    expect(body).toMatchObject({ answered: false, sources: [] });
   });
 });
 
