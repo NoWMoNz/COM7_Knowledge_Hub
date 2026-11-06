@@ -58,10 +58,12 @@ type GenerateResponse = {
 export type GenerateResult = { text: string; blocked: boolean };
 
 export async function generateText(system: string, user: string): Promise<GenerateResult> {
-  const data = await post<GenerateResponse>(getAiConfig().GEMINI_CHAT_MODEL, "generateContent", {
+  const { GEMINI_CHAT_MODEL, GEMINI_THINKING_LEVEL } = getAiConfig();
+  const thinking = GEMINI_THINKING_LEVEL === "default" ? {} : { thinkingConfig: { thinkingLevel: GEMINI_THINKING_LEVEL.toUpperCase() } };
+  const data = await post<GenerateResponse>(GEMINI_CHAT_MODEL, "generateContent", {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts: [{ text: user }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 2048, ...thinking },
   });
   if (data.promptFeedback?.blockReason) return { text: "", blocked: true };
   const cand = data.candidates?.[0];

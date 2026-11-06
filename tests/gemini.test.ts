@@ -59,6 +59,21 @@ describe("gemini.service (mocked fetch; no real API call)", () => {
     expect((await generateText("sys", "user")).blocked).toBe(true);
   });
 
+  it("generateText sends the configured thinking level (default low); 'default' sends none", async () => {
+    const f = vi.fn(async () => json({ candidates: [{ content: { parts: [{ text: "ok [1]" }] } }] }));
+    vi.stubGlobal("fetch", f);
+    const cfgOf = (i: number) => JSON.parse((f.mock.calls[i] as unknown as [string, RequestInit])[1].body as string).generationConfig;
+    await generateText("sys", "user");
+    expect(cfgOf(0).thinkingConfig).toEqual({ thinkingLevel: "LOW" });
+    process.env.GEMINI_THINKING_LEVEL = "minimal";
+    await generateText("sys", "user");
+    expect(cfgOf(1).thinkingConfig).toEqual({ thinkingLevel: "MINIMAL" });
+    process.env.GEMINI_THINKING_LEVEL = "default";
+    await generateText("sys", "user");
+    expect(cfgOf(2).thinkingConfig).toBeUndefined();
+    delete process.env.GEMINI_THINKING_LEVEL;
+  });
+
   it("fails clearly without an API key and makes no network call", async () => {
     delete process.env.GEMINI_API_KEY;
     const f = vi.fn();

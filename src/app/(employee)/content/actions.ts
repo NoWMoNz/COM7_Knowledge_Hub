@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { requirePermission } from "@/lib/auth/session";
 import { PERMISSIONS } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/server";
@@ -45,4 +46,32 @@ export async function deleteContentAction(_prev: FormState, fd: FormData): Promi
   revalidatePath("/content");
   revalidatePath("/dashboard");
   return { success: "ลบแล้ว / Deleted." };
+}
+
+const reorderSchema = z.object({
+  kind: z.enum(["announcement", "faq", "quick_link"]),
+  ids: z.array(uuidSchema).min(1).max(200).refine((ids) => new Set(ids).size === ids.length, "Duplicate items."),
+});
+
+/** Drag-and-drop reorder: position i becomes sort_order i. Only rows whose order actually changed are written. */
+export async function reorderContentAction(kind: string, ids: string[]): Promise<FormState> {
+  const user = await requirePermission(PERMISSIONS.CONTENT_MANAGE);
+  const p = reorderSchema.safeParse({ kind, ids });
+  if (!p.success) return { error: "Invalid order." };
+
+  const supabase = await createClient(); // RLS requires content:manage
+  const { data: current, error: readError } = await supabase.from("content_items").select("id, sort_order").eq("kind", p.data.kind).in("id", p.data.ids);
+  if (readError || !current || current.length !== p.data.ids.length) return { error: "รายการมีการเปลี่ยนแปลง กรุณารีเฟรช / The list changed, please refresh." };
+
+  const was = new Map(current.map((r) => [r.id as string, r.sort_order as number]));
+  const changed = p.data.ids.map((id, i) => ({ id, i })).filter(({ id, i }) => was.get(id) !== i);
+  const results = await Promise.all(changed.map(({ id, i }) => supabase.from("content_items").update({ sort_order: i }).eq("id", id).eq("kind", p.data.kind)));
+  if (results.some((r) => r.error)) return { error: "Could not save the new order." };
+
+  if (changed.length > 0) {
+    await writeAudit({ actorId: user.id, action: "content.reorder", resourceType: "content", metadata: { kind: p.data.kind, moved: changed.length } });
+  }
+  revalidatePath("/content");
+  revalidatePath("/dashboard");
+  return { success: "บันทึกลำดับแล้ว / Order saved." };
 }

@@ -34,56 +34,60 @@ const Chip = ({ children }: { children: React.ReactNode }) => (
 );
 
 export default async function DocumentDetailPage(props: PageProps<"/documents/[id]">) {
-  const user = await requireUser();
   const { id } = await props.params;
   const sp = await props.searchParams;
   if (!uuidSchema.safeParse(id).success) notFound();
 
   const supabase = await createClient();
-  const { data } = await supabase.from("documents").select(DOCUMENT_SELECT).eq("id", id).maybeSingle();
+  // The document read is RLS-scoped, so it runs alongside the session check; nothing renders unless requireUser() passes.
+  const [user, { data }] = await Promise.all([
+    requireUser(),
+    supabase.from("documents").select(DOCUMENT_SELECT).eq("id", id).maybeSingle(),
+  ]);
   if (!data) notFound(); // also hides documents the user may not access
   const doc = data as unknown as DocumentRow;
   const isManager = hasPermission(user.permissions, PERMISSIONS.DOCUMENT_MANAGE);
+  const canAccess = hasPermission(user.permissions, PERMISSIONS.ACCESS_MANAGE);
   const shown = doc.current ?? doc.latest;
 
-  let versions: VersionRow[] = [];
-  let categories: { id: string; name: string }[] = [];
-  if (isManager) {
-    const [v, c] = await Promise.all([
-      supabase.from("document_versions").select("id, document_id, version_number, original_filename, file_ext, file_size, status, error_code, error_message, created_at, processed_at, uploaded_by, uploaded_by_name").eq("document_id", id).order("version_number", { ascending: false }),
-      supabase.from("categories").select("id, name").order("sort_order").order("name"),
-    ]);
-    versions = (v.data ?? []) as VersionRow[];
-    categories = c.data ?? [];
-  }
-
-  const canAccess = hasPermission(user.permissions, PERMISSIONS.ACCESS_MANAGE);
-  let access: { granted: string[]; departments: { id: string; label: string }[]; roles: { id: string; label: string }[]; users: { id: string; label: string }[] } | null = null;
-  if (canAccess) {
-    const [g, d, r, u] = await Promise.all([
-      supabase.from("document_access").select("grantee_type, grantee_id").eq("document_id", id),
-      supabase.from("departments").select("id, name").order("name"),
-      supabase.from("roles").select("id, name").order("name"),
-      supabase.from("profiles").select("id, email, full_name").eq("is_active", true).order("email").limit(500),
-    ]);
-    access = {
-      granted: (g.data ?? []).map((x) => `${x.grantee_type}:${x.grantee_id}`),
-      departments: (d.data ?? []).map((x) => ({ id: x.id, label: x.name })),
-      roles: (r.data ?? []).map((x) => ({ id: x.id, label: x.name })),
-      users: (u.data ?? []).map((x) => ({ id: x.id, label: x.full_name || x.email })),
-    };
-  }
-
-  // Related = other documents in the same category the user can already see (RLS applies); read-only.
-  let related: { id: string; title: string; current: { file_ext: string } | { file_ext: string }[] | null }[] = [];
-  if (doc.category_id) {
-    const { data: rel } = await supabase
-      .from("documents")
-      .select("id, title, current:document_versions!documents_current_version_fk(file_ext)")
-      .eq("category_id", doc.category_id).neq("id", id).not("current_version_id", "is", null)
-      .order("updated_at", { ascending: false }).limit(4);
-    related = (rel ?? []) as unknown as typeof related;
-  }
+  type AccessData = { granted: string[]; departments: { id: string; label: string }[]; roles: { id: string; label: string }[]; users: { id: string; label: string }[] };
+  type RelatedRow = { id: string; title: string; current: { file_ext: string } | { file_ext: string }[] | null };
+  // The three sections below are independent of each other: load them in one round trip instead of three.
+  const [{ versions, categories }, access, related] = await Promise.all([
+    (async (): Promise<{ versions: VersionRow[]; categories: { id: string; name: string }[] }> => {
+      if (!isManager) return { versions: [], categories: [] };
+      const [v, c] = await Promise.all([
+        supabase.from("document_versions").select("id, document_id, version_number, original_filename, file_ext, file_size, status, error_code, error_message, created_at, processed_at, uploaded_by, uploaded_by_name").eq("document_id", id).order("version_number", { ascending: false }),
+        supabase.from("categories").select("id, name").order("sort_order").order("name"),
+      ]);
+      return { versions: (v.data ?? []) as VersionRow[], categories: c.data ?? [] };
+    })(),
+    (async (): Promise<AccessData | null> => {
+      if (!canAccess) return null;
+      const [g, d, r, u] = await Promise.all([
+        supabase.from("document_access").select("grantee_type, grantee_id").eq("document_id", id),
+        supabase.from("departments").select("id, name").order("name"),
+        supabase.from("roles").select("id, name").order("name"),
+        supabase.from("profiles").select("id, email, full_name").eq("is_active", true).order("email").limit(500),
+      ]);
+      return {
+        granted: (g.data ?? []).map((x) => `${x.grantee_type}:${x.grantee_id}`),
+        departments: (d.data ?? []).map((x) => ({ id: x.id, label: x.name })),
+        roles: (r.data ?? []).map((x) => ({ id: x.id, label: x.name })),
+        users: (u.data ?? []).map((x) => ({ id: x.id, label: x.full_name || x.email })),
+      };
+    })(),
+    // Related = other documents in the same category the user can already see (RLS applies); read-only.
+    (async (): Promise<RelatedRow[]> => {
+      if (!doc.category_id) return [];
+      const { data: rel } = await supabase
+        .from("documents")
+        .select("id, title, current:document_versions!documents_current_version_fk(file_ext)")
+        .eq("category_id", doc.category_id).neq("id", id).not("current_version_id", "is", null)
+        .order("updated_at", { ascending: false }).limit(4);
+      return (rel ?? []) as unknown as RelatedRow[];
+    })(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -211,10 +215,10 @@ export default async function DocumentDetailPage(props: PageProps<"/documents/[i
                   const c = Array.isArray(r.current) ? r.current[0] : r.current;
                   return (
                     <li key={r.id}>
-                      <Link href={`/documents/${r.id}`} className="flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-slate-50">
+                      <a href={`/api/documents/${r.id}/file`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-slate-50">
                         <FileTypeIcon ext={c?.file_ext} className="size-8" />
                         <span className="line-clamp-2 text-sm font-medium text-slate-800">{r.title}</span>
-                      </Link>
+                      </a>
                     </li>
                   );
                 })}

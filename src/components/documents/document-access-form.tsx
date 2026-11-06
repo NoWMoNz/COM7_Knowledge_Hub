@@ -35,7 +35,7 @@ export function DocumentAccessForm({ documentId, level, granted, departments, ro
   const [lvl, setLvl] = useState(level);
   const g = new Set(granted);
   return (
-    <form action={action} className="space-y-3 rounded-lg border border-border bg-card shadow-card p-4">
+    <form action={action} className="space-y-3 rounded-2xl border border-border bg-card shadow-card p-4">
       <input type="hidden" name="id" value={documentId} />
       <div className="flex gap-6 text-sm">
         <label className="flex items-center gap-2"><input type="radio" name="level" value="company" checked={lvl === "company"} onChange={() => setLvl("company")} />ทั้งบริษัท / Company-wide</label>

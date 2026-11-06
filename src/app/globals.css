@@ -5,23 +5,23 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * COM7 Knowledge Hub design system
+ * COM7 Knowledge Hub design system (v2, "modern enterprise")
  * ---------------------------------------------------------------------------
  * Brand colors are MEASURED from the COM7 logo (public/brand/com7-logo.png):
  *   green #5CB946 (mark)   grey #898B8F (wordmark)
- * #5CB946 on white is only 2.5:1, so it is used for decoration (logo, active
- * indicator, icons). Interactive green (buttons, links, text) is brand-700 (#337F2C, 5.0:1 on white).
+ * #5CB946 on white is only 2.5:1, so it is used for decoration (logo, glows, active indicator, icons).
+ * Interactive green (buttons, links, text) is brand-700 (#337F2C, 5.0:1 on white).
+ * Deep "forest" (brand-950/ink) is the dark brand surface used by the hero, auth panel and admin sidebar.
  *
- * Typography scale (IBM Plex Sans Thai, line-height 1.6 for Thai readability):
- *   page title  text-2xl/semibold   section title  text-lg/semibold   card title  text-base/semibold
- *   body        text-sm             caption/meta   text-xs text-slate-500
- * Spacing: Tailwind 4px grid; page gutter p-4 (mobile) / p-6 (desktop); section gap space-y-6.
- * Radius: 6px controls (rounded-md), 8px cards (rounded-lg). Shadows: shadow-card (rest), shadow-pop (menus/dialogs).
+ * Type: Plus Jakarta Sans (Latin + digits) with Anuphan (Thai) as the per-glyph fallback.
+ *   page title  text-[1.75rem]/semibold tracking-tight   section title text-lg/semibold   body text-sm   meta text-xs
+ * Radius: 10px controls (rounded-lg), 16px cards (rounded-2xl), full for pills/chips.
+ * Shadows: shadow-card (rest), shadow-lift (hover), shadow-pop (menus/dialogs), shadow-glow (primary CTA).
  */
 
 @theme {
   /* Brand green: 500 = logo; 700 = accessible interactive color */
-  --color-brand-50: #eefbec;
+  --color-brand-50: #f0faee;
   --color-brand-100: #dcf5d8;
   --color-brand-200: #bde9b6;
   --color-brand-300: #9adb90;
@@ -30,8 +30,9 @@
   --color-brand-600: #439d3b;
   --color-brand-700: #337f2c;
   --color-brand-800: #296124;
-  --color-brand-900: #224b1e;
-  --color-brand-950: #0e290c;
+  --color-brand-900: #1d4a1a;
+  --color-brand-950: #0b2410;
+  --color-ink: #0a1a0e;
 
   /* Neutrals derived from the logo grey; replaces Tailwind slate so every existing slate-* class is on-brand */
   --color-slate-50: #f7f8f8;
@@ -43,17 +44,19 @@
   --color-slate-600: #53565b;
   --color-slate-700: #3d4044;
   --color-slate-800: #292b2f;
-  --color-slate-900: #1b1d20;
-  --color-slate-950: #0e1013;
+  --color-slate-900: #16181b;
+  --color-slate-950: #0c0e10;
 
-  --shadow-card: 0 1px 2px rgb(16 24 32 / 0.04), 0 1px 3px rgb(16 24 32 / 0.06);
-  --shadow-pop: 0 8px 24px rgb(16 24 32 / 0.12), 0 2px 6px rgb(16 24 32 / 0.06);
+  --shadow-card: 0 1px 2px rgb(12 22 16 / 0.04), 0 2px 8px -2px rgb(12 22 16 / 0.06);
+  --shadow-lift: 0 2px 4px rgb(12 22 16 / 0.04), 0 12px 28px -8px rgb(12 22 16 / 0.14);
+  --shadow-pop: 0 16px 40px -12px rgb(12 22 16 / 0.22), 0 4px 10px rgb(12 22 16 / 0.06);
+  --shadow-glow: 0 6px 18px -6px rgb(51 127 44 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.18);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-plex), ui-sans-serif, system-ui, "Leelawadee UI", Tahoma, sans-serif;
+  --font-sans: var(--font-jakarta), var(--font-anuphan), ui-sans-serif, system-ui, "Leelawadee UI", Tahoma, sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -80,17 +83,17 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: 4px;
-  --radius-md: 6px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
   --radius-lg: var(--radius);
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
   --radius-3xl: 20px;
   --radius-4xl: 24px;
 }
 
 :root {
-  --background: #f7f8f8;
+  --background: #f5f7f6;
   --foreground: #1b1d20;
   --card: #ffffff;
   --card-foreground: #1b1d20;
@@ -105,10 +108,10 @@
   --accent: #eefbec;
   --accent-foreground: #224b1e;
   --destructive: #b3261e;
-  --border: #e4e6e8;
+  --border: #e6e9e7;
   --input: #8f9398; /* control borders need ~3:1 against white (WCAG 1.4.11) */
   --ring: #439d3b;
-  --radius: 8px;
+  --radius: 10px;
   --sidebar: #ffffff;
   --sidebar-foreground: #292b2f;
   --sidebar-primary: #337f2c;
@@ -131,6 +134,14 @@
     @apply bg-background text-foreground;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: var(--color-brand-200);
+    color: var(--color-ink);
   }
   /* One consistent, high-contrast focus indicator for every interactive element */
   :focus-visible {
@@ -156,15 +167,48 @@
 /* Tactile but quick feedback; both are disabled by prefers-reduced-motion below */
 @layer components {
   .card-hover {
-    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+    transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
   }
   .card-hover:hover {
-    border-color: var(--color-brand-400);
-    box-shadow: var(--shadow-pop);
-    transform: translateY(-1px);
+    border-color: var(--color-brand-300);
+    box-shadow: var(--shadow-lift);
+    transform: translateY(-2px);
   }
   .fade-in {
-    animation: fade-in 160ms ease-out both;
+    animation: fade-in 180ms ease-out both;
+  }
+  .rise-in {
+    animation: rise-in 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  /* Deep brand surface with soft green glows: hero, auth panel. Purely decorative. */
+  .bg-brand-mesh {
+    background-color: var(--color-ink);
+    background-image:
+      radial-gradient(60% 80% at 100% 0%, rgb(92 185 70 / 0.38) 0%, transparent 60%),
+      radial-gradient(50% 70% at 0% 100%, rgb(51 127 44 / 0.45) 0%, transparent 65%),
+      linear-gradient(135deg, #0b2410 0%, #12351a 55%, #1d4a1a 100%);
+  }
+  /* Faint dotted grid used on top of the mesh */
+  .bg-grid-faint {
+    background-image: radial-gradient(rgb(255 255 255 / 0.09) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  /* App canvas: barely-there brand tint at the top */
+  .bg-canvas {
+    background-color: var(--background);
+    background-image: radial-gradient(1200px 380px at 70% -120px, rgb(92 185 70 / 0.10), transparent 70%);
+    background-attachment: fixed;
+  }
+  .glass {
+    background-color: rgb(255 255 255 / 0.72);
+    backdrop-filter: saturate(180%) blur(14px);
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+  }
+  .text-gradient-brand {
+    background: linear-gradient(90deg, #9adb90, #5cb946);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }
 
@@ -172,6 +216,17 @@
   from {
     opacity: 0;
     transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;

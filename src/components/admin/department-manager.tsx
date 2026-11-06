@@ -18,7 +18,7 @@ function Row({ d }: { d: Dept }) {
   const [save, saveAction, saving] = useActionState(saveDepartmentAction, {});
   const [del, delAction, deleting] = useActionState(deleteDepartmentAction, {});
   return (
-    <li className="space-y-2 rounded-lg border border-border bg-card shadow-card p-3">
+    <li className="space-y-2 rounded-2xl border border-border bg-card shadow-card p-3">
       <form action={saveAction} className="flex flex-wrap items-center gap-2">
         <input type="hidden" name="id" value={d.id} />
         <Input name="name" defaultValue={d.name} required maxLength={120} aria-label="Department name" className="w-56" />
@@ -39,7 +39,7 @@ export function DepartmentManager({ departments }: { departments: Dept[] }) {
   const [state, action, pending] = useActionState(saveDepartmentAction, {});
   return (
     <div className="space-y-4">
-      <form action={action} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card shadow-card p-3">
+      <form action={action} className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card shadow-card p-3">
         <Input name="name" required maxLength={120} placeholder="ชื่อแผนกใหม่ / New department" aria-label="New department name" className="w-64" />
         <Input name="description" maxLength={1000} placeholder="คำอธิบาย / Description" aria-label="Description" className="min-w-48 flex-1" />
         <Button type="submit" disabled={pending} className="bg-brand-700 hover:bg-brand-800">เพิ่ม / Add</Button>

@@ -88,7 +88,7 @@ export function UploadPanel({ categories, documentId }: { categories: Category[]
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <label htmlFor="upload-category" className="font-medium text-slate-700">หมวดหมู่ของไฟล์ที่อัปโหลด / Category for uploads</label>
           <select id="upload-category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
-            className="h-9 rounded-md border border-input bg-card px-2 text-sm transition-colors hover:border-slate-500">
+            className="h-9 rounded-lg border border-input bg-card px-2 text-sm transition-colors hover:border-slate-500">
             <option value="">— ไม่ระบุ / None —</option>
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>

@@ -1,13 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSupabase } from "./helpers/fake-supabase";
 
-const h = vi.hoisted(() => ({ authUser: null as null | { id: string }, profile: null as unknown }));
+const h = vi.hoisted(() => ({
+  authUser: null as null | { id: string },
+  profile: null as unknown,
+  /** Subject of the locally verified JWT; defaults to the Auth server's user (undefined = follow authUser). */
+  claimsSub: undefined as undefined | null | string,
+}));
+const claims = () => {
+  const sub = h.claimsSub === undefined ? h.authUser?.id : h.claimsSub;
+  return { data: sub ? { claims: { sub } } : null };
+};
 
-vi.mock("@supabase/ssr", () => ({ createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: h.authUser } }) } }) }));
+vi.mock("@supabase/ssr", () => ({ createServerClient: () => ({ auth: { getClaims: async () => claims(), getUser: async () => ({ data: { user: h.authUser } }) } }) }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => {
     const f = fakeSupabase((table) => (table === "profiles" ? { data: h.profile } : undefined));
-    return { ...f.client, auth: { getUser: async () => ({ data: { user: h.authUser } }) } };
+    return { ...f.client, auth: { getClaims: async () => claims(), getUser: async () => ({ data: { user: h.authUser } }) } };
   },
 }));
 vi.mock("react", async (orig) => ({ ...(await orig<typeof import("react")>()), cache: <T,>(fn: T) => fn }));
@@ -26,6 +35,7 @@ const profile = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   h.authUser = null;
   h.profile = null;
+  h.claimsSub = undefined;
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
 });
@@ -67,6 +77,24 @@ describe("session & authorization helpers", () => {
     h.authUser = { id: "u1" };
     h.profile = profile({ is_active: false });
     expect(await getCurrentUser()).toBeNull();
+  });
+  it("getCurrentUser: null when Supabase Auth rejects the session even though the JWT still verifies (revoked/deleted)", async () => {
+    h.claimsSub = "u1";
+    h.authUser = null;
+    h.profile = profile();
+    expect(await getCurrentUser()).toBeNull();
+  });
+  it("getCurrentUser: null when the token subject and the Auth server's user differ", async () => {
+    h.claimsSub = "u1";
+    h.authUser = { id: "u2" };
+    h.profile = profile();
+    expect(await getCurrentUser()).toBeNull();
+  });
+  it("proxy: a token that fails local verification counts as signed out", async () => {
+    h.claimsSub = null;
+    h.authUser = { id: "u1" };
+    const res = await proxy(req("/dashboard"));
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
   });
   it("getCurrentUser: returns role and permissions from the database", async () => {
     h.authUser = { id: "u1" };

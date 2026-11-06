@@ -42,7 +42,7 @@ export default async function AuditLogPage(props: PageProps<"/admin/audit">) {
             <label htmlFor="audit-action" className="mb-1.5 block text-sm font-medium">กรองตาม Action (เช่น document, user, role)</label>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" aria-hidden />
-              <input id="audit-action" name="action" defaultValue={action} placeholder="document." className="h-10 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm transition-colors hover:border-slate-500 focus-visible:border-ring" />
+              <input id="audit-action" name="action" defaultValue={action} placeholder="document." className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm transition-colors hover:border-slate-500 focus-visible:border-ring" />
             </div>
           </div>
           <Button type="submit" size="lg">กรอง / Filter</Button>

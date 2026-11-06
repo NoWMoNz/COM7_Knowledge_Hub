@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import type { FileExt } from "@/constants/documents";
+import { decodeText } from "@/lib/utils/text";
 import { getOcrProvider, OcrError } from "./ocr";
 
 export type Segment = { text: string; page?: number; section?: string };
@@ -85,13 +86,7 @@ async function extractPptx(buffer: Buffer): Promise<Segment[]> {
 }
 
 function extractTxt(buffer: Buffer): Segment[] {
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
-  } catch {
-    text = new TextDecoder("windows-874").decode(buffer); // legacy Thai text files
-  }
-  return [{ text: text.replace(/^﻿/, "") }];
+  return [{ text: decodeText(buffer) }]; // UTF-8, or legacy Thai windows-874
 }
 
 export async function extractSegments(ext: FileExt, buffer: Buffer): Promise<Segment[]> {

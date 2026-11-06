@@ -24,8 +24,8 @@ export function ConfirmSubmit({
   title: string;
   description: React.ReactNode;
   confirmLabel?: string;
-  variant?: "destructive" | "outline";
-  size?: "sm" | "xs" | "default";
+  variant?: "destructive" | "outline" | "ghost";
+  size?: "sm" | "xs" | "default" | "icon-sm";
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -33,7 +33,8 @@ export function ConfirmSubmit({
 
   return (
     <>
-      <Button ref={anchor} type="button" variant={variant} size={size} disabled={disabled} onClick={() => setOpen(true)}>
+      <Button ref={anchor} type="button" variant={variant} size={size} disabled={disabled} onClick={() => setOpen(true)}
+        className={variant === "ghost" ? "text-slate-400 hover:bg-red-50 hover:text-red-700" : undefined}>
         {label}
       </Button>
       <AlertDialog open={open} onOpenChange={setOpen}>

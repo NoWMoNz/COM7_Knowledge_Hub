@@ -19,10 +19,10 @@ export function EmptyState({
   return (
     <div
       role={tone === "error" ? "alert" : undefined}
-      className={`flex flex-col items-center rounded-lg border border-dashed text-center ${compact ? "gap-1 p-4" : "gap-2 p-10"} ${tone === "error" ? "border-red-300 bg-red-50" : "border-slate-300 bg-card"}`}
+      className={`flex flex-col items-center rounded-2xl border border-dashed text-center ${compact ? "gap-1 p-5" : "gap-2 p-12"} ${tone === "error" ? "border-red-300 bg-red-50" : "border-slate-300 bg-card/70"}`}
     >
       {Icon && (
-        <span className={`mb-1 flex size-10 items-center justify-center rounded-full ${tone === "error" ? "bg-red-100 text-red-700" : "bg-brand-50 text-brand-700"}`}>
+        <span className={`mb-2 flex size-12 items-center justify-center rounded-2xl ${tone === "error" ? "bg-red-100 text-red-700" : "bg-linear-to-br from-brand-50 to-brand-100 text-brand-700 ring-1 ring-brand-200"}`}>
           <Icon className="size-5" aria-hidden />
         </span>
       )}

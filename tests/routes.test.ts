@@ -130,6 +130,42 @@ describe("GET /api/documents/[id]/file", () => {
     h.user = manager;
     expect((await fileGET(req(`?version=${VID}`), ctx())).status).toBe(302);
   });
+  describe("text files are served by the app as UTF-8 (Storage sends no charset, so Thai showed as mojibake)", () => {
+    const txt = () => fakeSupabase((table) =>
+      table === "documents" ? { data: { id: ID, current_version_id: VID } }
+        : table === "document_versions" ? { data: { storage_path: `${ID}/${VID}.txt`, document_id: ID, file_ext: "txt", original_filename: "นโยบาย.txt" } } : undefined);
+    const serve = async (bytes: Uint8Array) => {
+      h.user = employee;
+      h.userDb = txt();
+      const admin = fakeSupabase(() => undefined);
+      admin.storageDownload.mockResolvedValueOnce({ data: new Blob([bytes as BlobPart]), error: null });
+      h.adminDb = admin;
+      return { res: await fileGET(req(), ctx()), admin };
+    };
+
+    it("UTF-8 Thai text (with BOM) comes back as text/plain; charset=utf-8, inline, not cached", async () => {
+      const { res } = await serve(new TextEncoder().encode("﻿สวัสดี ทดสอบ"));
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(res.headers.get("content-disposition")).toContain(`filename*=UTF-8''${encodeURIComponent("นโยบาย.txt")}`);
+      expect(res.headers.get("cache-control")).toBe("private, no-store");
+      expect(await res.text()).toBe("สวัสดี ทดสอบ");
+    });
+    it("legacy windows-874 (TIS-620) Thai files are converted to UTF-8", async () => {
+      const { res } = await serve(Uint8Array.from([0xca, 0xc7, 0xd1, 0xca, 0xb4, 0xd5])); // "สวัสดี" in TIS-620
+      expect(await res.text()).toBe("สวัสดี");
+    });
+    it("502 when storage cannot return the file; non-text files still use the signed URL", async () => {
+      h.user = employee;
+      h.userDb = txt();
+      const admin = fakeSupabase(() => undefined);
+      admin.storageDownload.mockResolvedValueOnce({ data: null as unknown as Blob, error: { message: "gone" } });
+      h.adminDb = admin;
+      expect((await fileGET(req(), ctx())).status).toBe(502);
+      h.userDb = visible();
+      expect((await fileGET(req(), ctx())).status).toBe(302);
+    });
+  });
   it("404 when the version belongs to a different document", async () => {
     h.user = manager;
     h.userDb = fakeSupabase((table) =>
@@ -180,6 +216,24 @@ describe("POST /api/chat", () => {
     h.userDb = sessionDb();
     h.adminDb = fakeSupabase((t, calls) => (isCount(calls) ? { count: 15 } : undefined));
     expect((await chatPOST(chatReq({ message: "hi" }))).status).toBe(429);
+    // Rate-limited: nothing is created or written.
+    expect((h.userDb as ReturnType<typeof fakeSupabase>).ops("chat_sessions", "insert")).toHaveLength(0);
+    expect((h.adminDb as ReturnType<typeof fakeSupabase>).ops("chat_messages", "insert")).toHaveLength(0);
+  });
+
+  it("saves the question before the answer and bumps the session (writes run in parallel where independent)", async () => {
+    h.user = employee;
+    h.userDb = sessionDb();
+    h.searchChunks.mockResolvedValue([chunk]);
+    h.generateText.mockResolvedValue({ text: "Sick leave is 30 days [1].", blocked: false });
+    const res = await chatPOST(chatReq({ message: "How many sick days?", sessionId: "33333333-3333-4333-8333-333333333333" }));
+    expect(res.status).toBe(200);
+    const admin = h.adminDb as ReturnType<typeof fakeSupabase>;
+    const roles = admin.log.filter((l) => l.table === "chat_messages" && l.calls.some((c) => c.method === "insert"))
+      .map((l) => (l.calls.find((c) => c.method === "insert")!.args[0] as { role: string }).role);
+    expect(roles).toEqual(["user", "assistant"]);
+    expect(admin.ops("chat_sessions", "update")).toHaveLength(1);
+    expect(admin.ops("message_sources", "insert")).toHaveLength(1);
   });
 
   it("404 for someone else's / unknown session (RLS returns nothing)", async () => {

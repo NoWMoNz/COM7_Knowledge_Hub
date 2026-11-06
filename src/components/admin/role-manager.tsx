@@ -19,7 +19,7 @@ function RoleCard({ role, perms }: { role: Role; perms: Perm[] }) {
   const [save, saveAction, saving] = useActionState(savePermissionsAction, {});
   const [del, delAction, deleting] = useActionState(deleteRoleAction, {});
   return (
-    <li className="space-y-3 rounded-lg border border-border bg-card shadow-card p-4">
+    <li className="space-y-3 rounded-2xl border border-border bg-card shadow-card p-4">
       <div className="flex flex-wrap items-baseline gap-2">
         <h2 className="font-medium text-slate-900">{role.name}</h2>
         <code className="text-xs text-slate-500">{role.key}</code>
@@ -51,7 +51,7 @@ export function RoleManager({ roles, perms }: { roles: Role[]; perms: Perm[] }) 
   const [state, action, pending] = useActionState(createRoleAction, {});
   return (
     <div className="space-y-4">
-      <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-card shadow-card p-4">
+      <form action={action} className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-card shadow-card p-4">
         <Input name="name" required maxLength={120} placeholder="ชื่อบทบาท / Role name" aria-label="Role name" className="w-56" />
         <Input name="key" required pattern="[a-z_]{2,40}" placeholder="key_like_this" aria-label="Role key" className="w-44" />
         <Input name="description" maxLength={500} placeholder="คำอธิบาย / Description" aria-label="Description" className="min-w-48 flex-1" />

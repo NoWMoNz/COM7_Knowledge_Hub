@@ -11,7 +11,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => {
     const f = fakeSupabase((table) => (table === "profiles" ? { data: h.profile } : undefined));
-    return { ...f.client, auth: { getUser: async () => ({ data: { user: h.authUser } }), verifyOtp: h.verifyOtp, exchangeCodeForSession: h.exchange } };
+    return { ...f.client, auth: { getClaims: async () => ({ data: h.authUser ? { claims: { sub: h.authUser.id } } : null }), getUser: async () => ({ data: { user: h.authUser } }), verifyOtp: h.verifyOtp, exchangeCodeForSession: h.exchange } };
   },
 }));
 vi.mock("react", async (orig) => ({ ...(await orig<typeof import("react")>()), cache: <T,>(fn: T) => fn }));

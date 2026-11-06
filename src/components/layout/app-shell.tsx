@@ -67,10 +67,10 @@ export function AppShell({ user, variant = "employee", children }: { user: Curre
           </Suspense>
           <PopoverMenu
             label="เมนูผู้ใช้ / User menu"
-            triggerClassName="gap-2 py-1 pl-1 pr-2"
+            triggerClassName="gap-2 border border-slate-200 bg-white/80 py-1 pl-1 pr-3 shadow-card"
             trigger={
               <>
-                <span className="flex size-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-900">{initials(user)}</span>
+                <span className="flex size-8 items-center justify-center rounded-full bg-linear-to-br from-brand-500 to-brand-800 text-xs font-bold text-white">{initials(user)}</span>
                 <span className="hidden max-w-40 truncate text-sm font-medium text-slate-800 md:inline">{user.fullName ?? user.email}</span>
               </>
             }
@@ -78,10 +78,10 @@ export function AppShell({ user, variant = "employee", children }: { user: Curre
             <div className="border-b border-slate-100 pb-3">
               <p className="truncate font-medium text-slate-900">{user.fullName ?? user.email}</p>
               {user.fullName && <p className="truncate text-xs text-slate-500">{user.email}</p>}
-              <p className="mt-1 inline-block rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{role}</p>
+              <p className="mt-2 inline-flex rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100">{role}</p>
             </div>
             <form action={logoutAction} className="pt-3">
-              <button type="submit" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 pointer-coarse:min-h-11">
+              <button type="submit" className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 transition-colors hover:bg-red-50 hover:text-red-700 pointer-coarse:min-h-11">
                 <LogOut className="size-4" aria-hidden />ออกจากระบบ / Logout
               </button>
             </form>

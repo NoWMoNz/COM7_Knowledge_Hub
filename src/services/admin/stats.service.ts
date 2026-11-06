@@ -89,6 +89,6 @@ export async function getAdminStats() {
     topCategories: [...catCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([name, count]) => ({ name, count })),
     frequentQuestions: [...faq.values()].filter((f) => f.n >= 2).sort((a, b) => b.n - a.n).slice(0, 8),
     activeUsers30d: topIds.map(([id, count]) => ({ name: nameOf.get(id) ?? id, count })),
-    recentDocuments: docRows.slice(0, 5).map((d) => ({ id: d.id, title: d.title, created_at: d.created_at, status: statusOf(d) ?? "-", by: (Array.isArray(d.latest) ? d.latest[0] : d.latest)?.uploaded_by_name ?? "-" })),
+    recentDocuments: docRows.slice(0, 5).map((d) => ({ id: d.id, title: d.title, created_at: d.created_at, hasFile: Boolean(d.current_version_id), status: statusOf(d) ?? "-", by: (Array.isArray(d.latest) ? d.latest[0] : d.latest)?.uploaded_by_name ?? "-" })),
   };
 }

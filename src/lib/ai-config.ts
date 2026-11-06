@@ -5,6 +5,9 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().min(1).optional(),
   GEMINI_EMBEDDING_MODEL: z.string().min(1).default("gemini-embedding-2"),
   GEMINI_CHAT_MODEL: z.string().min(1).default("gemini-3.6-flash"),
+  // How much the chat model reasons before answering. Gemini 3 Flash defaults to medium; lower is faster and cheaper.
+  // "default" sends nothing (use it for models without thinking levels).
+  GEMINI_THINKING_LEVEL: z.enum(["default", "minimal", "low", "medium", "high"]).default("low"),
   RAG_TOP_K: z.coerce.number().int().min(1).max(20).default(6),
   RAG_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(0.5),
   OCR_PROVIDER: z.enum(["none", "gemini"]).default("none"),

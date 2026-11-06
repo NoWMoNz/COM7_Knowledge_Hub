@@ -22,7 +22,7 @@ function Msg({ s }: { s: { error?: string; success?: string } }) {
 export function CreateUserForm({ roles }: { roles: Role[] }) {
   const [state, action, pending] = useActionState(createUserAction, {});
   return (
-    <form action={action} className="grid gap-2 rounded-lg border border-border bg-card shadow-card p-4 sm:grid-cols-2 lg:grid-cols-5">
+    <form action={action} className="grid gap-2 rounded-2xl border border-border bg-card shadow-card p-4 sm:grid-cols-2 lg:grid-cols-5">
       <Input name="email" type="email" required placeholder="email" aria-label="Email" autoComplete="off" />
       <Input name="fullName" placeholder="ชื่อ / Full name" aria-label="Full name" maxLength={200} />
       <select name="roleId" required aria-label="Role" className="rounded-md border border-slate-300 bg-white px-2 text-sm">
@@ -38,7 +38,7 @@ export function CreateUserForm({ roles }: { roles: Role[] }) {
 export function InviteUserForm({ roles }: { roles: Role[] }) {
   const [state, action, pending] = useActionState(inviteUserAction, {});
   return (
-    <form action={action} className="grid gap-2 rounded-lg border border-border bg-card shadow-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+    <form action={action} className="grid gap-2 rounded-2xl border border-border bg-card shadow-card p-4 sm:grid-cols-2 lg:grid-cols-4">
       <Input name="email" type="email" required placeholder="email" aria-label="Invite email" autoComplete="off" />
       <Input name="fullName" placeholder="ชื่อ / Full name" aria-label="Full name" maxLength={200} />
       <select name="roleId" required aria-label="Role" className="rounded-md border border-slate-300 bg-white px-2 text-sm">
@@ -56,7 +56,7 @@ function UserRow({ u, roles, depts }: { u: UserRowData; roles: Role[]; depts: De
   const [pw, resetPw, pwPending] = useActionState(resetUserPasswordAction, {});
   const role = roles.find((r) => r.id === u.roleId)?.name ?? "-";
   return (
-    <li className="rounded-lg border border-border bg-card shadow-card">
+    <li className="rounded-2xl border border-border bg-card shadow-card">
       <details>
         <summary className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 p-3 text-sm transition-colors hover:bg-slate-50">
           <span className="font-medium">{u.fullName || u.email}</span>
@@ -122,11 +122,11 @@ export function UserList({ users, roles, depts }: { users: UserRowData[]; roles:
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pages);
   const visible = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
-  const field = "h-10 rounded-md border border-input bg-card px-3 text-sm transition-colors hover:border-slate-500 focus-visible:border-ring";
+  const field = "h-10 rounded-lg border border-input bg-card px-3 text-sm transition-colors hover:border-slate-500 focus-visible:border-ring";
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3 shadow-card" role="search">
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-card p-3 shadow-card" role="search">
         <div className="min-w-56 flex-1">
           <label htmlFor="user-search" className="mb-1.5 block text-sm font-medium">ค้นหาผู้ใช้ / Search users</label>
           <div className="relative">

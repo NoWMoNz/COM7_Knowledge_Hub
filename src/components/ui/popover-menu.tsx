@@ -39,14 +39,14 @@ export function PopoverMenu({
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className={`relative flex items-center rounded-md transition-colors hover:bg-slate-100 ${triggerClassName}`}
+        className={`relative flex items-center rounded-full transition-colors hover:bg-slate-900/5 ${triggerClassName}`}
       >
         {trigger}
       </button>
       {open && (
         <div
           onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setOpen(false); }}
-          className={`fade-in absolute z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-slate-200 bg-card p-3 text-sm shadow-pop ${align === "right" ? "right-0" : "left-0"}`}
+          className={`fade-in absolute z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/80 bg-card p-3 text-sm shadow-pop ${align === "right" ? "right-0" : "left-0"}`}
         >
           {children}
         </div>

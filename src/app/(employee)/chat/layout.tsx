@@ -1,33 +1,36 @@
 import Link from "next/link";
-import { MessageSquarePlus } from "lucide-react";
+import { History, MessageSquarePlus } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { SessionList } from "@/components/chat/session-list";
 
 export default async function ChatLayout({ children }: { children: React.ReactNode }) {
-  await requireUser();
   const supabase = await createClient();
-  const { data: sessions } = await supabase
-    .from("chat_sessions").select("id, title, updated_at").order("updated_at", { ascending: false }).limit(50);
+  // RLS limits the query to the caller's own sessions, so it runs alongside the session check instead of after it.
+  // Nothing renders unless requireUser() passes (it redirects otherwise).
+  const [, { data: sessions }] = await Promise.all([
+    requireUser(),
+    supabase.from("chat_sessions").select("id, title, updated_at").order("updated_at", { ascending: false }).limit(50),
+  ]);
 
   return (
-    <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
-      <aside aria-label="Conversations" className="space-y-2">
-        <Link href="/chat" className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground shadow-card transition-colors hover:bg-brand-800 pointer-coarse:min-h-11">
-          <MessageSquarePlus className="size-4" aria-hidden />สนทนาใหม่ / New conversation
+    <div className="grid gap-6 md:grid-cols-[16.5rem_minmax(0,1fr)]">
+      <aside aria-label="Conversations" className="space-y-4">
+        <Link href="/chat" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-linear-to-b from-brand-600 to-brand-700 px-3 text-sm font-semibold text-white shadow-glow transition-transform hover:-translate-y-px pointer-coarse:min-h-11">
+          <MessageSquarePlus className="size-4" aria-hidden />สนทนาใหม่ / New chat
         </Link>
-        {(sessions ?? []).length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-card p-4 text-center text-xs text-slate-500">ยังไม่มีประวัติการสนทนา / No conversations yet.</p>
-        ) : (
-          <ul className="max-h-[60vh] space-y-1 overflow-y-auto">
-            {(sessions ?? []).map((s) => (
-              <li key={s.id}>
-                <Link href={`/chat/${s.id}`} className="block truncate rounded-md px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-200 pointer-coarse:py-3">{s.title}</Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 px-1 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-slate-400"><History className="size-3.5" aria-hidden />ประวัติ / History</p>
+          {(sessions ?? []).length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-slate-300 bg-card/70 p-4 text-center text-xs text-slate-500">ยังไม่มีประวัติการสนทนา / No conversations yet.</p>
+          ) : (
+            <div className="max-h-[32vh] overflow-y-auto md:max-h-[calc(100vh-17rem)]">
+              <SessionList sessions={(sessions ?? []).map((s) => ({ id: s.id, title: s.title }))} />
+            </div>
+          )}
+        </div>
       </aside>
-      <section>{children}</section>
+      <section className="min-w-0">{children}</section>
     </div>
   );
 }

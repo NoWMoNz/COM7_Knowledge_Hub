@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, FileSearch, FileText, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ExternalLink, FileSearch, FileText, FolderOpen, RefreshCw, Search, Settings2, Trash2, X } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/server";
@@ -7,7 +7,7 @@ import { DOCUMENT_SELECT, type DocumentRow } from "@/types/documents";
 import { DOCUMENT_STATUSES, STATUS_LABELS } from "@/constants/documents";
 import { StatusBadge } from "@/components/documents/status-badge";
 import { UploadPanel } from "@/components/documents/upload-panel";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -19,6 +19,9 @@ import { deleteDocumentAction, reindexAction } from "./actions";
 import { formatBytes, formatDate } from "@/lib/utils/format";
 
 export const metadata = { title: "Documents" };
+
+// The file route re-checks access (RLS) and redirects to a short-lived signed URL.
+const fileHref = (id: string) => `/api/documents/${id}/file`;
 
 const SORTS = {
   newest: { label: "ใหม่สุด / Newest", col: "created_at", asc: false },
@@ -41,13 +44,14 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
   const isManager = hasPermission(user.permissions, PERMISSIONS.DOCUMENT_MANAGE);
 
   const supabase = await createClient();
-  const { data: categories } = await supabase.from("categories").select("id, name").order("sort_order").order("name");
+  const categoriesQuery = supabase.from("categories").select("id, name").order("sort_order").order("name");
 
   let query = supabase.from("documents").select(DOCUMENT_SELECT).order(SORTS[sortKey].col, { ascending: SORTS[sortKey].asc }).limit(200);
   if (!isManager) query = query.not("current_version_id", "is", null);
   if (/^[0-9a-f-]{36}$/i.test(category)) query = query.eq("category_id", category);
   if (q) query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`);
-  const { data, error } = await query;
+  // Categories and documents are independent: fetch them together (one round trip instead of two).
+  const [{ data: categories }, { data, error }] = await Promise.all([categoriesQuery, query]);
 
   let docs = (data ?? []) as unknown as DocumentRow[];
   if (isManager && (DOCUMENT_STATUSES as readonly string[]).includes(status)) {
@@ -57,7 +61,7 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
   // While any file is still being processed, the page re-fetches itself so the badge turns Ready/Failed without a manual refresh.
   const hasPending = isManager && docs.some((d) => d.latest?.status === "processing" || d.latest?.status === "uploading");
 
-  // Category chips keep the current search/sort so navigating categories never loses context.
+  // Chips keep the other active filters (header search, status, sort) so switching category never loses context.
   const href = (over: Record<string, string>) => {
     const params = new URLSearchParams();
     const next = { q, category, status, sort: sortKey === "newest" ? "" : sortKey, ...over };
@@ -65,7 +69,6 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
     const qs = params.toString();
     return qs ? `/documents?${qs}` : "/documents";
   };
-  const selectClass = "h-10 w-full rounded-md border border-input bg-card px-2.5 text-sm transition-colors hover:border-slate-500";
 
   return (
     <div className="space-y-6">
@@ -80,61 +83,42 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
           <SectionTitle id="upload-h">อัปโหลดเอกสาร / Upload documents</SectionTitle>
           <UploadPanel categories={categories ?? []} />
           <form action={reindexAction} className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
-            <Button type="submit" variant="outline" size="sm"><RefreshCw aria-hidden />สร้าง embedding ที่ขาด / Re-index missing embeddings</Button>
+            <Button type="submit" variant="outline" size="sm" className="h-auto min-h-9 whitespace-normal py-1.5 text-left"><RefreshCw aria-hidden />สร้าง embedding ที่ขาด / Re-index missing embeddings</Button>
             {sp.reindexed !== undefined && <span role="status" className="text-brand-800">{Number(one(sp.reindexed)) > 0 ? `คิวงาน ${one(sp.reindexed)} เวอร์ชัน / queued ${one(sp.reindexed)} version(s)` : "ไม่มีรายการที่ต้องทำ / nothing to re-index"}</span>}
           </form>
         </Card>
       )}
 
-      <Card className="gap-4 p-4 sm:p-5">
-        <form role="search" className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto]">
-          <div className="sm:col-span-2 lg:col-span-1">
-            <label htmlFor="q" className="mb-1.5 block text-sm font-medium">ค้นหา / Search</label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" aria-hidden />
-              <input id="q" name="q" defaultValue={q} placeholder="ชื่อหรือคำอธิบายเอกสาร / title or description" className="h-10 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm transition-colors hover:border-slate-500 focus-visible:border-ring" />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="category" className="mb-1.5 block text-sm font-medium">หมวดหมู่ / Category</label>
-            <select id="category" name="category" defaultValue={category} className={selectClass}>
-              <option value="">ทั้งหมด / All</option>
-              {(categories ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          {isManager && (
-            <div>
-              <label htmlFor="status" className="mb-1.5 block text-sm font-medium">สถานะ / Status</label>
-              <select id="status" name="status" defaultValue={status} className={selectClass}>
-                <option value="">ทั้งหมด / All</option>
-                {DOCUMENT_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-              </select>
-            </div>
-          )}
-          <div>
-            <label htmlFor="sort" className="mb-1.5 block text-sm font-medium">เรียงตาม / Sort</label>
-            <select id="sort" name="sort" defaultValue={sortKey} className={selectClass}>
-              {Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <Button type="submit" size="lg">ค้นหา / Apply</Button>
-            {filtering && <Link href="/documents" className="inline-flex h-10 items-center px-2 text-sm font-medium text-brand-700 hover:underline">ล้าง / Clear</Link>}
-          </div>
-        </form>
-
-        <nav aria-label="หมวดหมู่ / Categories" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+      {/* Category chips are the only filter on this page. A search from the header bar (?q=) or the notification
+          bell (?status=failed) still applies; it shows as a chip that can be removed. */}
+      <div className="space-y-3">
+        <nav aria-label="หมวดหมู่ / Categories" className="flex flex-wrap gap-2">
           {[{ id: "", name: "ทั้งหมด / All" }, ...(categories ?? [])].map((c) => {
             const active = category === c.id;
             return (
-              <Link key={c.id || "all"} href={href({ category: c.id })} aria-current={active ? "true" : undefined}
-                className={`whitespace-nowrap rounded-full border px-3 py-1 text-sm transition-colors duration-150 ${active ? "border-brand-700 bg-brand-700 text-white" : "border-slate-300 bg-card text-slate-700 hover:border-brand-500 hover:bg-brand-50"}`}>
+              <Link key={c.id || "all"} href={href({ category: c.id })} aria-current={active ? "page" : undefined}
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition-all duration-150 pointer-coarse:min-h-11 ${active ? "border-transparent bg-ink text-white shadow-card" : "border-slate-200 bg-card text-slate-600 shadow-card hover:border-brand-300 hover:text-brand-800"}`}>
+                {c.id ? <FolderOpen className={`size-4 ${active ? "text-brand-400" : "text-slate-400"}`} aria-hidden /> : null}
                 {c.name}
               </Link>
             );
           })}
         </nav>
-      </Card>
+        {(q || (isManager && status)) && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            {q && (
+              <Link href={href({ q: "" })} className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 font-medium text-brand-800 ring-1 ring-brand-200 hover:bg-brand-100" aria-label={`ล้างคำค้น "${q}" / Clear search`}>
+                <Search className="size-3.5" aria-hidden />&quot;{q}&quot;<X className="size-3.5" aria-hidden />
+              </Link>
+            )}
+            {isManager && (DOCUMENT_STATUSES as readonly string[]).includes(status) && (
+              <Link href={href({ status: "" })} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-200" aria-label="ล้างตัวกรองสถานะ / Clear status filter">
+                สถานะ / Status: {STATUS_LABELS[status as keyof typeof STATUS_LABELS]}<X className="size-3.5" aria-hidden />
+              </Link>
+            )}
+          </div>
+        )}
+      </div>
 
       {error ? (
         <EmptyState tone="error" icon={FileSearch} title="ไม่สามารถโหลดเอกสารได้ / Could not load documents">ลองรีเฟรชหน้านี้ หากยังพบปัญหา โปรดแจ้งผู้ดูแลระบบ / Please refresh, or contact an administrator if it persists.</EmptyState>
@@ -154,9 +138,8 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
               <TableRow className="bg-slate-50 hover:bg-slate-50">
                 <TableHead>เอกสาร / Document</TableHead>
                 <TableHead>หมวดหมู่ / Category</TableHead>
-                <TableHead>ประเภท / Format</TableHead>
-                <TableHead>อัปเดต / Updated</TableHead>
-                <TableHead>เวอร์ชัน / Version</TableHead>
+                <TableHead>ไฟล์ / File</TableHead>
+                <TableHead className="hidden min-[90rem]:table-cell">อัปเดต / Updated</TableHead>
                 <TableHead>สถานะ / Status</TableHead>
                 <TableHead className="text-right"><span className="sr-only">การดำเนินการ / Actions</span></TableHead>
               </TableRow>
@@ -166,26 +149,38 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
                 const shown = d.current ?? d.latest;
                 return (
                   <TableRow key={d.id}>
-                    <TableCell className="max-w-xs whitespace-normal">
+                    <TableCell className="min-w-52 max-w-xs whitespace-normal">
                       <div className="flex items-center gap-3">
                         <FileTypeIcon ext={shown?.file_ext} className="size-9" />
                         <div className="min-w-0">
-                          <Link href={`/documents/${d.id}`} className="font-medium text-slate-900 hover:text-brand-700 hover:underline">{d.title}</Link>
+                          {/* Clicking a ready document opens the file; settings/versions/access live behind "Manage". */}
+                          {d.current_version_id ? (
+                            <a href={fileHref(d.id)} target="_blank" rel="noopener noreferrer" className="font-medium text-slate-900 hover:text-brand-700 hover:underline">{d.title}</a>
+                          ) : (
+                            <Link href={`/documents/${d.id}`} className="font-medium text-slate-900 hover:text-brand-700 hover:underline">{d.title}</Link>
+                          )}
                           {d.description && <p className="line-clamp-1 text-xs text-slate-500">{d.description}</p>}
+                          <p className="text-xs text-slate-500 min-[90rem]:hidden">{formatDate(d.updated_at)}</p>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>{d.category?.name ?? "-"}</TableCell>
-                    <TableCell><span className="uppercase">{shown?.file_ext ?? "-"}</span>{shown ? <span className="ml-1 text-slate-500">{formatBytes(shown.file_size)}</span> : null}</TableCell>
-                    <TableCell className="text-slate-600">{formatDate(d.updated_at)}</TableCell>
-                    <TableCell>{d.current ? `v${d.current.version_number}` : "—"}{d.latest && d.latest.id !== d.current_version_id ? ` → v${d.latest.version_number}` : ""}</TableCell>
-                    <TableCell className="max-w-56 whitespace-normal">
+                    <TableCell>
+                      <span className="uppercase">{shown?.file_ext ?? "-"}</span>{shown ? <span className="ml-1 text-slate-500">{formatBytes(shown.file_size)}</span> : null}
+                      <p className="text-xs text-slate-500">{d.current ? `v${d.current.version_number}` : "—"}{d.latest && d.latest.id !== d.current_version_id ? ` → v${d.latest.version_number}` : ""}</p>
+                    </TableCell>
+                    <TableCell className="hidden text-slate-600 min-[90rem]:table-cell">{formatDate(d.updated_at)}</TableCell>
+                    <TableCell className="max-w-48 whitespace-normal">
                       {d.latest ? <StatusBadge status={d.latest.status} /> : "-"}
                       {d.latest?.status === "failed" && d.latest.error_message && (
                         <p className="mt-1 line-clamp-2 text-xs text-red-800" title={d.latest.error_message}>{d.latest.error_message}</p>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                      <Link href={`/documents/${d.id}`} title="จัดการ / Manage (versions, access, details)" className={buttonVariants({ variant: "outline", size: "icon-sm" })}>
+                        <Settings2 aria-hidden /><span className="sr-only">จัดการ {d.title} / Manage</span>
+                      </Link>
                       <form action={deleteDocumentAction}>
                         <input type="hidden" name="id" value={d.id} />
                         <ConfirmSubmit
@@ -196,6 +191,7 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
                           variant="outline"
                         />
                       </form>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -211,14 +207,15 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
               const shown = d.current ?? d.latest;
               return (
                 <li key={d.id}>
-                  <Link href={`/documents/${d.id}`} className="card-hover flex h-full flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-card">
+                  {/* The whole company reads documents here: one click opens the file itself in a new tab. */}
+                  <a href={fileHref(d.id)} target="_blank" rel="noopener noreferrer" aria-label={`${d.title} (เปิดในแท็บใหม่ / opens in a new tab)`} className="card-hover flex h-full flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-card">
                     <div className="flex items-start gap-3">
                       <FileTypeIcon ext={shown?.file_ext} />
                       <div className="min-w-0 flex-1">
                         <h3 className="line-clamp-2 font-semibold text-slate-900">{d.title}</h3>
                         {d.category && <p className="mt-0.5 text-xs font-medium text-brand-800">{d.category.name}</p>}
                       </div>
-                      <ChevronRight className="mt-1 size-4 shrink-0 text-slate-400" aria-hidden />
+                      <ExternalLink className="mt-1 size-4 shrink-0 text-slate-400" aria-hidden />
                     </div>
                     {d.description && <p className="line-clamp-2 text-sm text-slate-600">{d.description}</p>}
                     <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
@@ -227,7 +224,7 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
                       {d.current && <span>v{d.current.version_number}</span>}
                       <span className="ml-auto">{formatDate(d.updated_at)}</span>
                     </div>
-                  </Link>
+                  </a>
                 </li>
               );
             })}

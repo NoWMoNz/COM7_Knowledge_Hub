@@ -34,21 +34,24 @@ export async function POST(request: Request) {
   const supabase = await createClient(); // user-bound: RLS + permission-aware search
   const admin = createAdminClient(); // server-only writes (messages, sources, unanswered)
 
-  // Rate limit (per user, last 60s) from actual message records.
+  // Rate limit (per user, last 60s, from actual message records) and the session lookup are independent:
+  // one round trip instead of two.
   const since = new Date(Date.now() - 60_000).toISOString();
-  const { count } = await admin
-    .from("chat_messages")
-    .select("id, chat_sessions!inner(user_id)", { count: "exact", head: true })
-    .eq("chat_sessions.user_id", user.id)
-    .eq("role", "user")
-    .gte("created_at", since);
+  let sessionId = parsed.data.sessionId;
+  const [{ count }, existing] = await Promise.all([
+    admin
+      .from("chat_messages")
+      .select("id, chat_sessions!inner(user_id)", { count: "exact", head: true })
+      .eq("chat_sessions.user_id", user.id)
+      .eq("role", "user")
+      .gte("created_at", since),
+    // The session must belong to the caller (RLS-checked).
+    sessionId ? supabase.from("chat_sessions").select("id").eq("id", sessionId).maybeSingle() : null,
+  ]);
   if ((count ?? 0) >= RATE_LIMIT_PER_MINUTE) return err(429, "rate_limited", "Too many questions. Please wait a moment.");
 
-  // Resolve the session; it must belong to the caller (RLS-checked).
-  let sessionId = parsed.data.sessionId;
   if (sessionId) {
-    const { data: s } = await supabase.from("chat_sessions").select("id").eq("id", sessionId).maybeSingle();
-    if (!s) return err(404, "not_found", "Conversation not found.");
+    if (!existing?.data) return err(404, "not_found", "Conversation not found.");
   } else {
     const { data: s, error } = await supabase
       .from("chat_sessions").insert({ user_id: user.id, title: message.slice(0, 60) }).select("id").single();
@@ -58,7 +61,8 @@ export async function POST(request: Request) {
 
   const lang = detectLanguage(message);
   const cfg = getAiConfig();
-  await admin.from("chat_messages").insert({ session_id: sessionId, role: "user", content: message, language: lang });
+  // Saving the question runs while the AI works; it is awaited before the answer is stored, so the order is kept.
+  const savedQuestion = (async () => admin.from("chat_messages").insert({ session_id: sessionId, role: "user", content: message, language: lang }))();
 
   const result: RagResult = cfg.apiKey
     ? await answerQuestion(message, lang, { topK: cfg.RAG_TOP_K, minSimilarity: cfg.RAG_MIN_SIMILARITY }, {
@@ -67,36 +71,41 @@ export async function POST(request: Request) {
         generate: generateText,
       })
     : { answered: false, text: UNAVAILABLE[lang], reason: "ai_unavailable", topSimilarity: null }; // no key: no external calls
+  await savedQuestion;
 
-  const { data: assistant } = await admin
-    .from("chat_messages")
-    .insert({ session_id: sessionId, role: "assistant", content: result.text, answered: result.answered, language: lang })
-    .select("id").single();
-
-  if (assistant && result.answered) {
-    await admin.from("message_sources").insert(
-      result.sources.map(({ index, chunk }) => ({
-        message_id: assistant.id,
-        source_index: index,
-        chunk_id: chunk.chunk_id,
-        document_id: chunk.document_id,
-        version_id: chunk.version_id,
-        document_title: chunk.document_title,
-        version_number: chunk.version_number,
-        file_ext: chunk.file_ext,
-        page_number: chunk.page_number,
-        section: chunk.section,
-        similarity: chunk.similarity,
-      })),
-    );
-  }
-  if (!result.answered) {
-    await admin.from("unanswered_questions").insert({
-      user_id: user.id, session_id: sessionId, question: message, language: lang,
-      reason: result.reason, top_similarity: result.topSimilarity,
-    });
-  }
-  await admin.from("chat_sessions").update({ updated_at: new Date().toISOString() }).eq("id", sessionId);
+  // Independent writes run together; only the sources have to wait for the assistant message id.
+  await Promise.all([
+    (async () => {
+      const { data: assistant } = await admin
+        .from("chat_messages")
+        .insert({ session_id: sessionId, role: "assistant", content: result.text, answered: result.answered, language: lang })
+        .select("id").single();
+      if (assistant && result.answered) {
+        await admin.from("message_sources").insert(
+          result.sources.map(({ index, chunk }) => ({
+            message_id: assistant.id,
+            source_index: index,
+            chunk_id: chunk.chunk_id,
+            document_id: chunk.document_id,
+            version_id: chunk.version_id,
+            document_title: chunk.document_title,
+            version_number: chunk.version_number,
+            file_ext: chunk.file_ext,
+            page_number: chunk.page_number,
+            section: chunk.section,
+            similarity: chunk.similarity,
+          })),
+        );
+      }
+    })(),
+    result.answered
+      ? null
+      : admin.from("unanswered_questions").insert({
+          user_id: user.id, session_id: sessionId, question: message, language: lang,
+          reason: result.reason, top_similarity: result.topSimilarity,
+        }),
+    admin.from("chat_sessions").update({ updated_at: new Date().toISOString() }).eq("id", sessionId),
+  ]);
 
   return NextResponse.json({
     sessionId,

@@ -17,15 +17,23 @@ export type CurrentUser = {
 /** Verified user (token validated with Supabase Auth) plus role/permissions. Null if signed out or inactive. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return null;
+  // The user id comes from a locally verified JWT (no network with asymmetric signing keys), so the profile
+  // query can run IN PARALLEL with the authoritative getUser() check instead of after it. Nothing is trusted
+  // until getUser() confirms the same user, so revoked/deleted sessions are still rejected on every request.
+  const { data: claims } = await supabase.auth.getClaims();
+  const sub = claims?.claims?.sub;
+  if (!sub) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, email, full_name, is_active, roles(key, role_permissions(permission))")
-    .eq("id", auth.user.id)
-    .single();
-  if (!profile || !profile.is_active || !profile.roles) return null;
+  const [{ data: auth }, { data: profile }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("profiles")
+      .select("id, email, full_name, is_active, roles(key, role_permissions(permission))")
+      .eq("id", sub)
+      .single(),
+  ]);
+  if (!auth.user || auth.user.id !== sub) return null;
+  if (!profile || profile.id !== auth.user.id || !profile.is_active || !profile.roles) return null;
 
   const role = Array.isArray(profile.roles) ? profile.roles[0] : profile.roles;
   return {

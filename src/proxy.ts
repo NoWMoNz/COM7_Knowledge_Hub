@@ -23,14 +23,18 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  const { data } = await supabase.auth.getUser();
+  // getClaims() verifies the JWT signature locally against the project's (cached) JWKS, so this gate costs no
+  // network round trip on every request/prefetch. It still refreshes an expired session (cookies via setAll).
+  // The authoritative check stays in server code: getCurrentUser() validates with Supabase Auth, then RLS applies.
+  const { data } = await supabase.auth.getClaims();
+  const signedIn = Boolean(data?.claims?.sub);
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  if (!data.user && !isPublic) {
+  if (!signedIn && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  if (data.user && (pathname === "/login" || pathname === "/forgot-password")) {
+  if (signedIn && (pathname === "/login" || pathname === "/forgot-password")) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
   return response;

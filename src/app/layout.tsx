@@ -1,12 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Geist_Mono, IBM_Plex_Sans_Thai } from "next/font/google";
+import { Anuphan, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-// Thai + Latin in one family so mixed-language UI text has consistent weight and rhythm.
-const plex = IBM_Plex_Sans_Thai({
-  variable: "--font-plex",
+// Latin + digits from Plus Jakarta Sans; Thai glyphs fall through to Anuphan (modern loopless Thai). See globals.css --font-sans.
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
+  subsets: ["latin"],
+  display: "swap",
+});
+const anuphan = Anuphan({
+  variable: "--font-anuphan",
   subsets: ["thai", "latin"],
-  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -23,12 +27,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#ffffff",
+  themeColor: "#0b2410",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="th" className={`${plex.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="th" className={`${jakarta.variable} ${anuphan.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
